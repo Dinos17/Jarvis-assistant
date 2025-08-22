@@ -1,141 +1,236 @@
-# ARIA: Artificial Realistic Intelligence Agent
+# ARIA — Artificial Realistic Intelligence Agent
 
-ARIA (Artificial Realistic Intelligence Agent) is an advanced Python-based framework for building intelligent, realistic, and adaptable AI agents. It features modular architecture, persistent memory, dynamic personality settings, and seamless integration with modern LLM APIs (such as OpenRouter).
+Calm, professional, and exactly as helpful as you ordered.
 
----
-
-## 🚀 Features
-
-- **LLM Integration** — Interact with state-of-the-art Large Language Models
-- **Persistent Memory** — Uses LangChain for ongoing, context-rich conversations
-- **Customizable Personality** — Easily define and swap agent personas
-- **API Key Management** — Automatic rotation and secure storage
-- **Modular Design** — Clean codebase for easy extension and maintenance
+ARIA is a modular, async, LangChain-memory-enabled conversational assistant built around OpenRouter-hosted models (default: `qwen/qwen3-235b-a22b:free`). ARIA is designed to feel realistic by remembering long interactions via LangChain memory (buffer + summary), following a configurable personality module, and supporting robust API key rotation to avoid rate-limits. Lightweight enough for Replit; performant on a local PC.
 
 ---
 
-## 📦 Installation
+## Features
 
-1. **Clone the repository**
-    ```bash
-    git clone https://github.com/Dinos17/ARIA-Artificial_Realistic_Intelligence_Agent.git
-    cd ARIA-Artificial_Realistic_Intelligence_Agent
-    ```
-
-2. **Install dependencies**
-    ```bash
-    pip install -r requirements.txt
-    ```
-    > _If `requirements.txt` is missing, install packages based on code imports._
-
-3. **Configure environment variables**
-    - Create a `.env` file in the root directory.
-    - Add your API keys and other configuration settings as needed.
+- **Personalized personality module** (`personality_aria.py`): ARIA addresses you by name and simulates emotion-aware replies.
+- **LangChain memory** (`langchain_memory.py`): Combines conversation buffer and automatic summarization for long-term memory without blowing tokens.
+- **Async LLM wrapper** (`aria_llm.py`): Uses `httpx.AsyncClient`, handles retries, backoff, and status-code-aware errors.
+- **Key rotation tool** (`key_rotation_openrouter.py`): Round-robin through multiple OpenRouter keys; automatically skips keys hitting rate limits (HTTP 429).
+- **Modular main loop** (`main.py`): Interactive CLI, integrates memory and LLM, stores session memory in LangChain structures.
+- **Config via `.env`**: Model selection, timeouts, retry limits, and multiple API keys are environment-driven.
+- **Replit-compatible**: No forced venv usage required; works on local machine too.
 
 ---
 
-## 🛠️ Usage
+## Architecture
 
-Start ARIA from the command line:
+```
+User CLI <--> main.py
+                 |
+                 +--> langchain_memory.py  (ConversationBufferWindowMemory + ConversationSummaryMemory)
+                 |
+                 +--> aria_llm.py          (Async OpenRouter client; reads personality prompt)
+                 |
+                 +--> personality_aria.py  (System prompt template / personality rules)
+                 |
+                 +--> key_rotation_openrouter.py  (Optional standalone for bulk requests)
+```
+
+- `main.py` orchestrates: prompts user, requests context from ARIAMemory, calls ARIALLM, and updates memory.
+- `langchain_memory.py` handles message buffering and summaries (LangChain memory objects).
+- `aria_llm.py` is model agnostic — it reads `MODEL_ID` from environment; switching models only requires `.env` change.
+- `personality_aria.py` is the single source of truth for ARIA’s tone and behavior.
+- `key_rotation_openrouter.py` is a separate utility for batch workloads.
+
+---
+
+## File-by-file Description
+
+### `.env`
+Configuration for secrets and runtime settings. Example template:
+```
+OPENROUTER_API_KEY_1=sk-or-xxxxxxxxxxxxxxxxxxxxxx1
+OPENROUTER_API_KEY_2=sk-or-xxxxxxxxxxxxxxxxxxxxxx2
+...
+OPENROUTER_API_KEY_10=sk-or-xxxxxxxxxxxxxxxxxxxxxx10
+
+OPENROUTER_API_KEY=sk-or-...          # Optional single-key fallback
+MODEL_ID=qwen/qwen3-235b-a22b:free    # Default model ID
+CONTEXT_LIMIT=8                       # Recent turns to keep in buffer
+REQUEST_TIMEOUT_SECONDS=60
+MAX_RETRIES=3
+```
+- Use `OPENROUTER_API_KEY_N` for key rotation script.
+- `OPENROUTER_API_KEY` is used by `aria_llm.py` if present (single-key mode).
+- **Keep `.env` out of version control!**
+
+---
+
+### `personality_aria.py`
+Defines ARIA’s voice, protocol, and example behaviors.
+- **Function:** `get_personality_prompt(user_name: str = "User") -> str`
+- Returns a system prompt that helps the LLM stay in-character.
+
+---
+
+### `langchain_memory.py`
+Implements advanced LangChain memory pattern (buffer + summary).
+- **Class:** `ARIAMemory(user_name: str, context_window: int = 8)`
+- **Methods:** `load_history`, `get_context`, `update`, `dump_history`
+- Uses `ConversationBufferWindowMemory` and `ConversationSummaryMemory`.
+
+---
+
+### `aria_llm.py`
+Async API client for OpenRouter with robust retry/backoff and error handling.
+- **Class:** `ARIALLM(api_key: Optional[str] = None, model_id: Optional[str] = None)`
+- **Method:** `acomplete(user_input: str, chat_history: list, user_name: str) -> str`
+- Handles 401/429/5xx with appropriate retries or errors.
+
+---
+
+### `main.py`
+CLI interface orchestrating ARIA conversation.
+- Asks for user name, maintains context, calls LLM, updates memory.
+- Uses async loop, handles graceful shutdown.
+
+---
+
+### `key_rotation_openrouter.py`
+Utility for batch requests across multiple API keys with automatic rotation on rate-limit.
+- Loads keys, cycles with `itertools.cycle`, skips rate-limited keys.
+
+---
+
+## Installation & Setup
+
+### Replit (recommended for quick test)
+1. Create a new Repl (Python).
+2. Add all project files.
+3. In Replit "Secrets", add keys: `OPENROUTER_API_KEY_1`, ..., `OPENROUTER_API_KEY_10` (or `OPENROUTER_API_KEY` for single-key mode).
+4. Set other `.env` keys as needed.
+5. Install packages: `pip install httpx python-dotenv langchain`
+6. Run `main.py`.
+
+### Local Machine
+1. Clone repo.
+2. *(Optional)* Create venv:  
+   `python3 -m venv venv && source venv/bin/activate`
+3. Install dependencies:  
+   `pip install httpx python-dotenv langchain`
+4. Create `.env` file with your keys.
+5. Run:  
+   `python main.py`
+
+---
+
+## Usage Examples
+
+**Start ARIA:**
 ```bash
 python main.py
 ```
-You can modify `main.py` or extend the framework to fit your interface and use case.
-
----
-
-## 🗂️ Project Structure
-
-- `main.py` — Main entry point
-- `aria_llm.py` — Core LLM interaction logic
-- `personality_aria.py` — Personality configuration and switching
-- `langchain_memory.py` — Conversational memory integration
-- `key_rotation_openrouter.py` — API key management
-- `.env` — (Not tracked) Environment-specific configuration
-
----
-
-## 🧩 Customization
-
-- **Create new personalities**: Edit or add to `personality_aria.py`
-- **Swap LLMs/providers**: Update `aria_llm.py` and your `.env` file
-- **Extend memory**: Modify `langchain_memory.py` for different persistence strategies
-
----
-
-## 🤝 Contributing
-
-Contributions and suggestions are welcome!
-- Fork the repo and submit pull requests
-- Open issues for bugs or feature requests
-
----
-
-## 📄 License
-
-_No license file detected. Please add a LICENSE file if you intend to open source this project._
-
----
-
-**Author:** [Dinos17](https://github.com/Dinos17)- **Main Entry Point:** `main.py` provides the CLI or app interface for running ARIA.
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8+
-- Access to OpenRouter or another supported LLM API
-- Required Python packages (see code for details)
-
-### Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Dinos17/ARIA-Artificial_Realistic_Intelligence_Agent.git
-   cd ARIA-Artificial_Realistic_Intelligence_Agent
-   ```
-
-2. **Set up environment variables:**
-   - Copy the `.env` template or create your own with appropriate API keys and settings.
-
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   *(If `requirements.txt` is not present, review imports in the Python files and install necessary packages.)*
-
-### Running ARIA
-
-```bash
-python main.py
+Sample session:
+```
+Hello! What is your name? Dino
+ARIA online. Type 'exit' to shut me down, Dino.
+Dino: hi ARIA
+ARIA: Hello, Dino! How's your day going so far?
+Dino: remind me about the meeting tomorrow
+ARIA: Got it, Dino — when is the meeting scheduled?
+...
 ```
 
-Modify or extend `main.py` to suit your interface needs.
+**Run batch prompts with key rotation:**
+```bash
+python key_rotation_openrouter.py
+```
 
-## File Overview
+---
 
-- `aria_llm.py`: Core logic for LLM interactions.
-- `langchain_memory.py`: Integrates LangChain memory with ARIA.
-- `personality_aria.py`: Defines ARIA's personality traits and behaviors.
-- `key_rotation_openrouter.py`: Handles API key rotation for OpenRouter.
-- `.env`: (Sensitive) Environment variables for API access and configuration.
-- `main.py`: Project entry point.
+## `.env` Template
 
-## Customization
+```
+# Primary single-key (optional)
+OPENROUTER_API_KEY=sk-or-your-primary-key
 
-- **Personalities:** Edit or extend `personality_aria.py` to build new agent personas.
-- **Memory:** Adjust memory logic in `langchain_memory.py` for custom persistence.
-- **LLM Providers:** Update `aria_llm.py` and `.env` for new models or providers.
+# OR (for key rotation)
+OPENROUTER_API_KEY_1=sk-or-key1
+OPENROUTER_API_KEY_2=sk-or-key2
+...
+OPENROUTER_API_KEY_10=sk-or-key10
+
+# Model and runtime
+MODEL_ID=qwen/qwen3-235b-a22b:free
+CONTEXT_LIMIT=8
+REQUEST_TIMEOUT_SECONDS=60
+MAX_RETRIES=3
+```
+
+---
+
+## How Key Rotation Works
+
+1. `key_rotation_openrouter.py` reads `OPENROUTER_API_KEY_1..10`.
+2. Uses `itertools.cycle` to rotate keys.
+3. Each prompt is attempted with current key.
+4. On HTTP 429 (rate-limited), key is temporarily blocked and script proceeds to next.
+5. Continues until success or all keys are exhausted.
+
+*Note: Rotation can be integrated into `aria_llm.py` if desired.*
+
+---
+
+## Troubleshooting & Tips
+
+- **401 Unauthorized:** Check key value, no stray quotes, verify on OpenRouter dashboard.
+- **DNS errors:** Confirm outbound network access.
+- **Slow responses:** Reduce `CONTEXT_LIMIT`, run locally, or enable streaming (advanced).
+- **JSON decode errors:** Print response in `aria_llm.py` for diagnostics.
+- **LangChain summarization:** Supply an LLM instance for automatic summary.
+- **Rate-limiting:** Use key rotation for batch workloads.
+
+---
+
+## Security & Privacy
+
+- **API keys are secrets.** Never commit `.env`; use Replit secrets or OS environment.
+- **Personal data:** Model requests go to OpenRouter — do not send sensitive PII unless understood.
+- **Rate-limits:** Respect OpenRouter terms of service.
+
+---
+
+## Testing
+
+- Mock `httpx.AsyncClient.post` to simulate 200, 401, 429, and 5xx responses.
+- Test `langchain_memory.py` by providing artificial histories; verify context/update logic.
+- Test `key_rotation_openrouter.py` with invalid keys to ensure proper rotation.
+
+---
+
+## Contribution Guide
+
+1. Fork the repo.
+2. Create a feature branch: `git checkout -b feature/<name>`.
+3. Install dependencies and run `main.py`.
+4. Make changes; add tests for new behavior.
+5. Open a PR with description and rationale.
+6. Follow code style: simple, explicit, and documented.
+
+---
+
+## Roadmap / Next Enhancements
+
+- Integrate text-to-speech and speech-to-text for full voice interactions.
+- Add tooling (web search, file system, external APIs).
+- Implement streaming output for partial results.
+- Add persistent storage for long-term memory (SQLite/vector DB).
+- Secure admin UI for key rotation and usage monitoring.
+
+---
 
 ## License
 
-*No license file detected. Please add a LICENSE file for open source compliance.*
-
-## Contributing
-
-Contributions, issues, and feature requests are welcome! Please use issues and pull requests via [GitHub](https://github.com/Dinos17/ARIA-Artificial_Realistic_Intelligence_Agent).
+*No license specified yet. Recommended: MIT (permissive), Apache-2.0, or GPL-3.0. Add a LICENSE file to clarify usage rights.*
 
 ---
 
-**Author:** [Dinos17](https://github.com/Dinos17)
-````
+## One-line Summary
+
+ARIA — Artificial Realistic Intelligence Agent: async, LangChain-memory-enabled, personality-driven conversational assistant using OpenRouter Qwen3 models with support for API key rotation and long-term memory.
