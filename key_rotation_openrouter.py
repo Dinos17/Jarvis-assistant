@@ -1,66 +1,49 @@
+# key_rotation_openrouter.py
 import os
+import itertools
 import asyncio
 import httpx
-from itertools import cycle
-from dotenv import load_dotenv
 
-load_dotenv()
+MODEL_ID = os.getenv("MODEL_ID", "moonshotai/kimi-k2:free")
+TIMEOUT = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 45))
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))
 
-# Load API keys
-API_KEYS = [os.getenv(f"OPENROUTER_API_KEY_{i}") for i in range(1, 11)]
-MODEL_ID = "qwen/qwen3-235b-a22b:free"
-BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
-MAX_RETRIES = 3
-REQUEST_TIMEOUT = 60
+# Collect keys from .env
+keys = [os.getenv(f"OPENROUTER_API_KEY_{i}") for i in range(1, 11)]
+keys = [k for k in keys if k]
 
-async def send_prompt(prompt: str, api_key: str):
-    payload = {
-        "model": MODEL_ID,
-        "messages": [{"role": "user", "content": prompt}]
-    }
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+async def query_model(prompt: str, api_key: str):
+    payload = {"model": MODEL_ID, "messages": [{"role": "user", "content": prompt}]}
+    retries = 0
+    while retries <= MAX_RETRIES:
         try:
-            response = await client.post(
-                BASE_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=payload
-            )
-            if response.status_code == 429:
-                return None, True
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"], False
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                headers = {"Authorization": f"Bearer {api_key}"}
+                resp = await client.post("https://openrouter.ai/api/v1/chat/completions",
+                                         json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                return None, True
-            else:
-                raise
-        except Exception as e:
-            raise RuntimeError(f"Request failed: {e}")
+                return None  # Rate limit hit, try next key
+            retries += 1
+        except Exception:
+            retries += 1
+    return "[Error: Failed after retries]"
 
 async def main():
-    prompt_list = [
-        "Hello ARIA, how are you today?",
-        "Explain quantum computing in simple terms.",
-        "Give me a joke about AI."
-    ]
-    key_cycle = cycle(API_KEYS)
+    prompts = ["Hello ARIA", "Tell me a joke", "What is the weather today?"]
+    key_cycle = itertools.cycle(keys)
 
-    for prompt in prompt_list:
-        while True:
-            api_key = next(key_cycle)
-            if not api_key:
-                continue
-            try:
-                answer, rate_limited = await send_prompt(prompt, api_key)
-                if rate_limited:
-                    print(f"[INFO] Key {api_key[-4:]} reached rate limit, rotating...")
-                    continue
-                print(f"[Prompt] {prompt}\n[Response] {answer}\n")
-                break
-            except Exception as e:
-                print(f"[ERROR] {e}. Rotating key...")
-                continue
+    for prompt in prompts:
+        result = None
+        attempts = 0
+        while result is None and attempts < len(keys):
+            key = next(key_cycle)
+            result = await query_model(prompt, key)
+            attempts += 1
+        print(f"Prompt: {prompt}\nResponse: {result}\n")
 
 if __name__ == "__main__":
     asyncio.run(main())
